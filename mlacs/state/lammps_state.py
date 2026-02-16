@@ -8,7 +8,7 @@
 
 from subprocess import run, PIPE
 from abc import abstractmethod
-
+from pathlib import Path
 import numpy as np
 
 from ase.io import read
@@ -23,6 +23,52 @@ from ..utilities.io_lammps import (LammpsInput,
                                    EmptyLammpsBlockInput,
                                    LammpsBlockInput,
                                    get_lammps_command)
+
+
+### ADDITION BY S. LONGO
+def modify_lammps_input_to_pi(pristine_path, nbeads):
+    
+    with open(pristine_path, 'r') as fl:
+        pr = fl.readlines()
+    
+    for i_l, line in enumerate(pr):
+        if "atom_style" in line:
+            lat_s = i_l
+        if "group" in line:
+            lgroup = i_l
+        elif 'fix f1' in line:
+            lfix_f1 = i_l
+        elif 'fix f2 all nph' in line:
+            npt = True
+            lnph = i_l
+        elif "dump last all custom" in line:
+            l_dump = i_l
+    
+    pr[lat_s] += f'atom_modify map array\n'
+    pr[lgroup] += f'variable ibead uloop {nbeads}\n'
+    
+    th_line = pr[lfix_f1].split(" ")
+    t = th_line[4]
+    ttau = th_line[6]
+    seed = th_line[7]
+    
+    if npt == True:
+        nph_line = pr[lnph].split(" ")
+        iso = nph_line[4]
+        p = nph_line[5]
+        ptau = nph_line[7]
+        pr[lnph] = ''
+        pr[lfix_f1] = f"fix f1 all pimd/langevin ensemble nph integrator obabo temp {t} thermostat PILE_L {seed} tau {ttau} {iso} {p} barostat BZP taup {ptau}\n"
+    else:
+        pass
+    
+    d_line = pr[l_dump].split(" ")
+    d_line[5] = 'configurations_${ibead}.out'
+    pr[l_dump] = " ".join(d_line)
+    
+    with open(pristine_path, 'w') as fl:
+        fl.writelines(pr)
+#### END OF ADDITION BY S. LONGO
 
 
 class BaseLammpsState(StateManager):
@@ -92,7 +138,8 @@ class BaseLammpsState(StateManager):
             fd.write(str(lmp_input))
 
         self._write_lammps_atoms(atoms, atom_style, elements)
-
+        # insert here function to modify the input file
+        modify_lammps_input_to_pi(pristine_path=self.subsubdir / self.lammpsfname, nbeads=self.nbeads)
         lmp_cmd = self._get_lammps_command()
         lmp_handle = run(lmp_cmd,
                          shell=True,
@@ -103,6 +150,24 @@ class BaseLammpsState(StateManager):
             msg = "LAMMPS stopped with the exit code \n" + \
                   f"{lmp_handle.stderr.decode()}"
             raise RuntimeError(msg)
+        
+        # before saving anything, let's clean the output and change names
+            # first we rename the files for conf. 1
+        fpath = self.subsubdir / f"configurations_1.out"
+        Path(fpath).rename('configurations.out')
+        fpath = self.subsubdir / f"log.lammps.0"
+        Path(fpath).replace("log.lammps")
+        fpath = self.subsubdir / f"out.lmp.0"
+        Path(fpath).rename("out.lmp")
+            # then we delete all the others
+        for i_b in range(2, self.nbeads+1): # the configurations outputs start by 1  
+            fpath = self.subsubdir / f"configurations_{i_b}.out"
+            Path(fpath).unlink()
+            fpath = self.subsubdir / f"log.lammps.{i_b-1}"
+            Path(fpath).unlink()
+            fpath = self.subsubdir / f"out.lmp.{i_b-1}"
+            Path(fpath).unlink()
+
         if self.neti is False:
             atoms = self._get_atoms_results(initial_charges)
 
@@ -480,6 +545,9 @@ class LammpsState(BaseLammpsState):
             if self.pressure is None:
                 msg = "You need to put a pressure with p_stop"
                 raise ValueError(msg)
+        if 'pi' in kwargs.keys():
+            if kwargs['pi'] == True:
+                self.nbeads = int(kwargs['nbeads'])
 
         self._make_info_dynamics()
 
