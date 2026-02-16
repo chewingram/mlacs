@@ -537,7 +537,8 @@ class LammpsState(BaseLammpsState):
                       f"f_max {self.fd} N_f {self.n_f} seed {qtbseed}"
                 block("qtb", txt)
             elif self.langevin:
-                txt = f"fix f1 all langevin {temp} {temp} {self.damp} " + \
+                txt = f"#test\n" + \
+                      f"fix f1 all langevin {temp} {temp} {self.damp} " + \
                       f"{langevinseed} gjf {self.gjf} zero yes"
                 block("langevin", txt)
                 ptxt = f"{press*10000} {press*10000} {self.pdamp}"
