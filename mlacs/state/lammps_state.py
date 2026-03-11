@@ -138,36 +138,34 @@ class BaseLammpsState(StateManager):
             fd.write(str(lmp_input))
 
         self._write_lammps_atoms(atoms, atom_style, elements)
-        # insert here function to modify the input file
-        modify_lammps_input_to_pi(pristine_path=self.subsubdir / self.lammpsfname, nbeads=self.nbeads)
+        if self.pi == True:
+            # insert here function to modify the input file
+            modify_lammps_input_to_pi(pristine_path=self.subsubdir / self.lammpsfname, nbeads=self.nbeads)
         lmp_cmd = self._get_lammps_command()
+        print(f'cmd lammps: {lmp_cmd}')
         lmp_handle = run(lmp_cmd,
                          shell=True,
                          cwd=str(self.subsubdir),
                          stderr=PIPE)
-
         if lmp_handle.returncode != 0:
             msg = "LAMMPS stopped with the exit code \n" + \
                   f"{lmp_handle.stderr.decode()}"
             raise RuntimeError(msg)
-        
-        # before saving anything, let's clean the output and change names
-            # first we rename the files for conf. 1
-        fpath = self.subsubdir / f"configurations_1.out"
-        Path(fpath).rename('configurations.out')
-        fpath = self.subsubdir / f"log.lammps.0"
-        Path(fpath).replace("log.lammps")
-        fpath = self.subsubdir / f"out.lmp.0"
-        Path(fpath).rename("out.lmp")
-            # then we delete all the others
-        for i_b in range(2, self.nbeads+1): # the configurations outputs start by 1  
-            fpath = self.subsubdir / f"configurations_{i_b}.out"
-            Path(fpath).unlink()
-            fpath = self.subsubdir / f"log.lammps.{i_b-1}"
-            Path(fpath).unlink()
-            fpath = self.subsubdir / f"out.lmp.{i_b-1}"
-            Path(fpath).unlink()
-
+        if self.pi == True: 
+            # before saving anything, let's clean the output and change names
+                # first let's select a random bead
+            saving_bead = np.random.randint(1, self.nbeads)
+                # first we rename the files for conf. #saving_bead
+            fpath = self.subsubdir / f"configurations_{saving_bead}.out"
+            Path(fpath).rename('configurations.out')
+            fpath = self.subsubdir / f"log.lammps.{saving_bead - 1}"
+            Path(fpath).replace("log.lammps")
+            fpath = self.subsubdir / f"out.lmp.{saving_bead - 1}"
+            Path(fpath).rename("out.lmp")
+                # then we delete all the others
+            [x.unlink() for x in self.subsubdir.glob('configurations_*.out')]
+            [x.unlink() for x in self.subsubdir.glob('log.lammps.*')]
+            [x.unlink() for x in self.subsubdir.glob('out.lmp.*')]
         if self.neti is False:
             atoms = self._get_atoms_results(initial_charges)
 
@@ -344,9 +342,13 @@ class BaseLammpsState(StateManager):
         '''
         Function to load the bash command to run LAMMPS
         '''
+        # ADDITION BY S. LONGO
         cmd = get_lammps_command()
-        return f"{cmd} -in {self.lammpsfname} -sc out.lmp"
-
+        if self.pi == True:
+            return f"{cmd} {self.beads_specs} -in {self.lammpsfname} -sc out.lmp"
+            #return f"{cmd} -in {self.lammpsfname} -sc out.lmp"
+        else:
+            return f"{cmd} -in {self.lammpsfname} -sc out.lmp"
 # ========================================================================== #
     def initialize_momenta(self, atoms):
         """
@@ -547,7 +549,13 @@ class LammpsState(BaseLammpsState):
                 raise ValueError(msg)
         if 'pi' in kwargs.keys():
             if kwargs['pi'] == True:
+                self.pi = True
                 self.nbeads = int(kwargs['nbeads'])
+                self.beads_specs = kwargs['beads_specs']
+            else:
+                self.pi = False
+        else:
+            self.pi = False
 
         self._make_info_dynamics()
 

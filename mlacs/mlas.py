@@ -253,7 +253,8 @@ class Mlas(Manager):
                                                       subfolder_l,
                                                       step=step_l)
         partial_success = self._handle_potential_error(atoms_true)
-
+        # DEBUG: ADDITION BY S. LONGO
+        print('DFT done. Going to do the single point thing')
         # SinglePointCalculator to bypass the calc attach to atoms thing of ase
         for at in atoms_mlip:
             at.calc = self.mlip.get_calculator()

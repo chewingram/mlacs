@@ -225,9 +225,12 @@ class MomentTensorPotential(SelfMlipManager):
         """
         Initialize a ASE calculator from the model
         """
+        # DEBUG: ADDITION BY S. LONGO
+        print('Initializing the LAMMPS calc. for the mlip')
         calc = LAMMPS(pair_style=self.pair_style,
                       pair_coeff=self.pair_coeff,
                       atom_style=self.atom_style,
+                      tmp_dir = 'tmp_lmpdir', # debug
                       keep_alive=False)
         if self.model_post is not None:
             calc.set(model_post=self.model_post)
@@ -308,6 +311,8 @@ class MomentTensorPotential(SelfMlipManager):
             mlp_command = self._get_cmd_mlip3()
         else:
             mlp_command = self._get_cmd_mlip2()
+        # DEBUG
+        print(f'command: {mlp_command}')
         with open(self.subsubdir / "mlip.log", "w") as fd:
             mlp_handle = run(mlp_command.split(),
                              stderr=PIPE,
